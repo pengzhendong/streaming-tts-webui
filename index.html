@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="css/bootstrap.min.css" rel="stylesheet">
+    <script type="text/javascript" src="js/pcm-player.js"></script>
+    <script type="text/javascript" src="js/wavesurfer.min.js"></script>
+    <script type="text/javascript" src="js/bootstrap.bundle.min.js"></script>
+    <title>流式语音合成</title>
+    <style>
+        body {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #waveform {
+            cursor: pointer;
+            position: relative;
+        }
+        #hover {
+            position: absolute;
+            left: 0;
+            top: 0;
+            z-index: 10;
+            pointer-events: none;
+            height: 100%;
+            width: 0;
+            mix-blend-mode: overlay;
+            background: rgba(255, 255, 255, 0.5);
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        #waveform:hover #hover {
+            opacity: 1;
+        }
+        #time,
+        #duration {
+            position: absolute;
+            z-index: 11;
+            top: 50%;
+            margin-top: -1px;
+            transform: translateY(-50%);
+            font-size: 11px;
+            background: rgba(0, 0, 0, 0.75);
+            padding: 2px;
+            color: #ddd;
+        }
+        #time {
+            left: 0;
+        }
+        #duration {
+            right: 0;
+        }
+    </style>
+</head>
+<body>
+    <h2>流式语音合成</h2>
+    <div class="mb-3">
+        <label for="url" class="form-label">WebSocket：</label>
+        <input type="text" class="form-control" id="url" value="ws://bert-vits2.com/tts">
+    </div>
+    <div class="mb-3">
+        <label for="textInput" class="form-label">待合成文本：</label>
+        <textarea type="text" class="form-control" id="textInput" placeholder="请输入待合成文本" rows="4"></textarea>
+    </div>
+    <div class="row">
+        <div class="col">
+            <label for="speaker" class="form-label">选择说话人：</label>
+            <select class="form-select" id="speaker">
+                <option value="kaini">kaini</option>
+            </select>
+            <label for="sdpRatio" class="form-label mt-3">SDP Ratio：</label>
+            <span id="sdpRatioShow">0.7</span>
+            <input type="range" class="form-range" min="0.1" max="1.0" value="0.7" step="0.1" id="sdpRatio" onchange="document.getElementById('sdpRatioShow').innerHTML=value">
+            <label for="noiseScaleW" class="form-label mt-3">Noise Scale W：</label>
+            <span id="noiseScaleWShow">0.9</span>
+            <input type="range" class="form-range" min="0.1" max="1.0" value="0.9" step="0.1" id="noiseScaleW" onchange="document.getElementById('noiseScaleWShow').innerHTML=value">
+            <label for="volume" class="form-label mt-3">音量：</label>
+            <span id="volumeShow">0.5</span>
+            <input type="range" class="form-range" min="0.1" max="1.0" value="0.5" step="0.1" id="volume" onchange="document.getElementById('volumeShow').innerHTML=value">
+        </div>
+        <div class="col">
+            <label for="sampleRate" class="form-label">选择采样率：</label>
+            <select class="form-select" id="sampleRate">
+                <option value="8000">8000</option>
+                <option value="16000">16000</option>
+                <option value="22050">22050</option>
+                <option value="44100">44100</option>
+                <option value="48000">48000</option>
+            </select>
+            <label for="noiseScale" class="form-label mt-3">Noise Scale：</label>
+            <span id="noiseScaleShow">0.7</span>
+            <input type="range" class="form-range" min="0.1" max="1.0" value="0.7" step="0.1" id="noiseScale" onchange="document.getElementById('noiseScaleShow').innerHTML=value">
+            <label for="speed" class="form-label mt-3">语速：</label>
+            <span id="speedShow">0.95</span>
+            <input type="range" class="form-range" min="0.5" max="2.0" value="0.95" step="0.05" id="speed" onchange="document.getElementById('speedShow').innerHTML=value">
+            <div class="row">
+                <div class="col">
+                    <button class="btn btn-primary mt-3 w-100" id="Button">开始合成</button>
+                </div>
+                <div class="col">
+                    <p class="mt-3" id="delayInfo">首包延迟: </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="waveform">
+        <div id="time">0:00</div>
+        <div id="duration">0:00</div>
+        <div id="hover"></div>
+    </div>
+
+    <script>
+        var button = document.getElementById("Button");
+        var delayInfo = document.getElementById("delayInfo");
+
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')
+        // Define the waveform gradient
+        const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height * 1.35)
+        gradient.addColorStop(0, '#656666') // Top color
+        gradient.addColorStop((canvas.height * 0.7) / canvas.height, '#656666') // Top color
+        gradient.addColorStop((canvas.height * 0.7 + 1) / canvas.height, '#ffffff') // White line
+        gradient.addColorStop((canvas.height * 0.7 + 2) / canvas.height, '#ffffff') // White line
+        gradient.addColorStop((canvas.height * 0.7 + 3) / canvas.height, '#B1B1B1') // Bottom color
+        gradient.addColorStop(1, '#B1B1B1') // Bottom color
+        // Define the progress gradient
+        const progressGradient = ctx.createLinearGradient(0, 0, 0, canvas.height * 1.35)
+        progressGradient.addColorStop(0, '#EE772F') // Top color
+        progressGradient.addColorStop((canvas.height * 0.7) / canvas.height, '#EB4926') // Top color
+        progressGradient.addColorStop((canvas.height * 0.7 + 1) / canvas.height, '#ffffff') // White line
+        progressGradient.addColorStop((canvas.height * 0.7 + 2) / canvas.height, '#ffffff') // White line
+        progressGradient.addColorStop((canvas.height * 0.7 + 3) / canvas.height, '#F6B094') // Bottom color
+        progressGradient.addColorStop(1, '#F6B094') // Bottom color
+
+        const wavesurfer = WaveSurfer.create({
+            container: '#waveform',
+            waveColor: gradient,
+            progressColor: progressGradient,
+            barWidth: 2,
+        })
+
+        button.addEventListener("click", function() {
+            const url = document.getElementById("url").value;
+            const textInput = document.getElementById("textInput").value;
+            const speaker = document.getElementById("speaker").value;
+            const sampleRate = parseInt(document.getElementById("sampleRate").value);
+            const sdpRatio = parseFloat(document.getElementById("sdpRatio").value);
+            const noiseScale = parseFloat(document.getElementById("noiseScale").value);
+            const noiseScaleW = parseFloat(document.getElementById("noiseScaleW").value);
+            const speed = parseFloat(document.getElementById("speed").value);
+            const volume = parseFloat(document.getElementById("volume").value);
+
+            const socket = new WebSocket(url);
+            socket.binaryType = 'arraybuffer';
+            player = new PCMPlayer({
+                codec: 'Int16',
+                channels: 1,
+                sampleRate: sampleRate,
+            });
+            player.volume(volume);
+
+            socket.onmessage = function(event) {
+                var delay = performance.now() - startTime;
+                delayInfo.textContent = "首包延迟: " + Math.ceil(delay) + " 毫秒";
+                player.feed(event.data);
+                wavesurfer.load(player.url);
+            };
+            socket.onopen = function(event) {
+                console.log('WebSocket 连接已建立');
+                socket.send(JSON.stringify({
+                    speaker: speaker,
+                    text: textInput,
+                    sample_rate: sampleRate,
+                    sdp_ratio: sdpRatio,
+                    noise_scale: noiseScale,
+                    noise_scale_w: noiseScaleW,
+                    length_scale: 1 / speed,
+                }));
+                startTime = performance.now();
+            };
+        });
+
+        // Play/pause on click
+        wavesurfer.on('interaction', () => { wavesurfer.playPause() })
+        const hover = document.querySelector('#hover')
+        const waveform = document.querySelector('#waveform')
+        waveform.addEventListener('pointermove', (e) => (hover.style.width = `${e.offsetX}px`))
+        const formatTime = (seconds) => {
+            const minutes = Math.floor(seconds / 60)
+            const secondsRemainder = Math.round(seconds) % 60
+            const paddedSeconds = `0${secondsRemainder}`.slice(-2)
+            return `${minutes}:${paddedSeconds}`
+        }
+        const timeEl = document.querySelector('#time')
+        const durationEl = document.querySelector('#duration')
+        wavesurfer.on('decode', (duration) => (durationEl.textContent = formatTime(duration)))
+        wavesurfer.on('timeupdate', (currentTime) => (timeEl.textContent = formatTime(currentTime)))
+    </script>
+</body>
+</html>
