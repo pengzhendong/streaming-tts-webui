@@ -97,7 +97,7 @@
             <input type="range" class="form-range" min="0.5" max="2.0" value="0.95" step="0.05" id="speed" onchange="document.getElementById('speedShow').innerHTML=value">
             <div class="row">
                 <div class="col">
-                    <button class="btn btn-primary mt-3 w-100" id="Button">开始合成</button>
+                    <button class="btn btn-primary mt-3 w-100" id="button">开始合成</button>
                 </div>
                 <div class="col">
                     <p class="mt-3" id="delayInfo">首包延迟: </p>
@@ -113,7 +113,7 @@
     </div>
 
     <script>
-        var button = document.getElementById("Button");
+        var button = document.getElementById("button");
         var delayInfo = document.getElementById("delayInfo");
 
         const canvas = document.createElement('canvas')
@@ -138,8 +138,11 @@
         const wavesurfer = WaveSurfer.create({
             container: '#waveform',
             waveColor: gradient,
+            mediaControls: true,
             progressColor: progressGradient,
             barWidth: 2,
+            cursorWidth: 2,
+            cursorColor: '#ddd5e9',
         })
 
         button.addEventListener("click", function() {
@@ -163,8 +166,10 @@
             player.volume(volume);
 
             socket.onmessage = function(event) {
-                var delay = performance.now() - startTime;
-                delayInfo.textContent = "首包延迟: " + Math.ceil(delay) + " 毫秒";
+                if (delay == 0) {
+                    delay = performance.now() - startTime;
+                    delayInfo.textContent = "首包延迟: " + Math.ceil(delay) + " 毫秒";
+                }
                 player.feed(event.data);
                 wavesurfer.load(player.url);
             };
@@ -180,6 +185,7 @@
                     length_scale: 1 / speed,
                 }));
                 startTime = performance.now();
+                delay = 0;
             };
         });
 
