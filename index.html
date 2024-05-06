@@ -57,28 +57,31 @@
 <body>
     <h2>流式语音合成</h2>
     <div class="mb-3">
-        <label for="url" class="form-label">WebSocket：</label>
-        <input type="text" class="form-control" id="url" value="ws://bert-vits2.com/tts">
+        <label for="domain" class="form-label">域名：</label>
+        <input type="text" class="form-control" id="domain" value="127.0.0.1" onchange="init()">
+        <ul class="mt-3">
+            <li>音色列表：<a id="speakers" href="http://127.0.0.1/speakers">http://127.0.0.1/speakers</a></li>
+            <li>流式接口：<a id="tts">ws://127.0.0.1/tts</a></li>
+        </ul>
     </div>
     <div class="mb-3">
         <label for="textInput" class="form-label">待合成文本：</label>
-        <textarea type="text" class="form-control" id="textInput" placeholder="请输入待合成文本" rows="4"></textarea>
+        <textarea type="text" class="form-control" id="textInput" placeholder="请输入待合成文本" rows="2"></textarea>
     </div>
     <div class="row">
         <div class="col">
             <label for="speaker" class="form-label">选择说话人：</label>
             <select class="form-select" id="speaker">
-                <option value="kaini">kaini</option>
             </select>
             <label for="sdpRatio" class="form-label mt-3">SDP Ratio：</label>
             <span id="sdpRatioShow">0.7</span>
-            <input type="range" class="form-range" min="0.1" max="1.0" value="0.7" step="0.1" id="sdpRatio" onchange="document.getElementById('sdpRatioShow').innerHTML=value">
+            <input type="range" class="form-range" min="0.1" max="1.0" value="0.7" step="0.1" id="sdpRatio" oninput="document.getElementById('sdpRatioShow').innerHTML=value">
             <label for="noiseScaleW" class="form-label mt-3">Noise Scale W：</label>
             <span id="noiseScaleWShow">0.9</span>
-            <input type="range" class="form-range" min="0.1" max="1.0" value="0.9" step="0.1" id="noiseScaleW" onchange="document.getElementById('noiseScaleWShow').innerHTML=value">
+            <input type="range" class="form-range" min="0.1" max="1.0" value="0.9" step="0.1" id="noiseScaleW" oninput="document.getElementById('noiseScaleWShow').innerHTML=value">
             <label for="volume" class="form-label mt-3">音量：</label>
-            <span id="volumeShow">0.5</span>
-            <input type="range" class="form-range" min="0.1" max="1.0" value="0.5" step="0.1" id="volume" onchange="document.getElementById('volumeShow').innerHTML=value">
+            <span id="volumeShow">1.0</span>
+            <input type="range" class="form-range" min="0.1" max="1.0" value="1.0" step="0.1" id="volume" oninput="document.getElementById('volumeShow').innerHTML=value">
         </div>
         <div class="col">
             <label for="sampleRate" class="form-label">选择采样率：</label>
@@ -86,15 +89,15 @@
                 <option value="8000">8000</option>
                 <option value="16000">16000</option>
                 <option value="22050">22050</option>
-                <option value="44100">44100</option>
+                <option value="44100" selected>44100</option>
                 <option value="48000">48000</option>
             </select>
             <label for="noiseScale" class="form-label mt-3">Noise Scale：</label>
             <span id="noiseScaleShow">0.7</span>
-            <input type="range" class="form-range" min="0.1" max="1.0" value="0.7" step="0.1" id="noiseScale" onchange="document.getElementById('noiseScaleShow').innerHTML=value">
+            <input type="range" class="form-range" min="0.1" max="1.0" value="0.7" step="0.1" id="noiseScale" oninput="document.getElementById('noiseScaleShow').innerHTML=value">
             <label for="speed" class="form-label mt-3">语速：</label>
-            <span id="speedShow">0.95</span>
-            <input type="range" class="form-range" min="0.5" max="2.0" value="0.95" step="0.05" id="speed" onchange="document.getElementById('speedShow').innerHTML=value">
+            <span id="speedShow">1.0</span>
+            <input type="range" class="form-range" min="0.5" max="2.0" value="1.0" step="0.05" id="speed" oninput="document.getElementById('speedShow').innerHTML=value">
             <div class="row">
                 <div class="col">
                     <button class="btn btn-primary mt-3 w-100" id="button">开始合成</button>
@@ -113,8 +116,83 @@
     </div>
 
     <script>
+        function init() {
+            const domain = document.getElementById("domain").value;
+            tts = document.getElementById("tts");
+            speakers = document.getElementById("speakers");
+
+            tts.innerText = "ws://" + domain + "/tts";
+            speakers.href = "http://" + domain + "/speakers";
+            speakers.innerText = speakers.href;
+            fetch(speakers.href).then(response => {
+                if (!response.ok) {
+                    throw new Error("Get speakers falied");
+                }
+                return response.json();
+            }).then(data => {
+                const select = document.getElementById("speaker");
+                select.innerHTML = "";
+                data.forEach(speaker => {
+                    const option = document.createElement("option");
+                    option.value = speaker;
+                    option.text = speaker;
+                    select.appendChild(option);
+                });
+            }).catch(error => {
+                console.error("There was a problem with your fetch operation: ", error);
+            });
+        };
+        init();
+
+        var player;
         var button = document.getElementById("button");
         var delayInfo = document.getElementById("delayInfo");
+        button.addEventListener("click", function() {
+            const domain = document.getElementById("domain").value;
+            const textInput = document.getElementById("textInput").value;
+            const speaker = document.getElementById("speaker").value;
+            const sampleRate = parseInt(document.getElementById("sampleRate").value);
+            const sdpRatio = parseFloat(document.getElementById("sdpRatio").value);
+            const noiseScale = parseFloat(document.getElementById("noiseScale").value);
+            const noiseScaleW = parseFloat(document.getElementById("noiseScaleW").value);
+            const speed = parseFloat(document.getElementById("speed").value);
+            const volume = parseFloat(document.getElementById("volume").value);
+
+            const socket = new WebSocket("ws://" + domain + "/tts");
+            socket.binaryType = "arraybuffer";
+            if (player instanceof PCMPlayer) {
+                player.destroy();
+            }
+            player = new PCMPlayer({
+                codec: "Int16",
+                channels: 1,
+                sampleRate: sampleRate,
+            });
+            player.volume(volume);
+
+            socket.onmessage = function(event) {
+                if (delay == 0) {
+                    delay = performance.now() - startTime;
+                    delayInfo.textContent = "首包延迟: " + Math.ceil(delay) + " 毫秒";
+                }
+                player.feed(event.data);
+                wavesurfer.load(player.url);
+            };
+            socket.onopen = function(event) {
+                console.log("WebSocket 连接已建立");
+                socket.send(JSON.stringify({
+                    speaker: speaker,
+                    text: textInput,
+                    sample_rate: sampleRate,
+                    sdp_ratio: sdpRatio,
+                    noise_scale: noiseScale,
+                    noise_scale_w: noiseScaleW,
+                    length_scale: 1 / speed,
+                }));
+                startTime = performance.now();
+                delay = 0;
+            };
+        });
 
         const canvas = document.createElement('canvas')
         const ctx = canvas.getContext('2d')
@@ -144,51 +222,6 @@
             cursorWidth: 2,
             cursorColor: '#ddd5e9',
         })
-
-        button.addEventListener("click", function() {
-            const url = document.getElementById("url").value;
-            const textInput = document.getElementById("textInput").value;
-            const speaker = document.getElementById("speaker").value;
-            const sampleRate = parseInt(document.getElementById("sampleRate").value);
-            const sdpRatio = parseFloat(document.getElementById("sdpRatio").value);
-            const noiseScale = parseFloat(document.getElementById("noiseScale").value);
-            const noiseScaleW = parseFloat(document.getElementById("noiseScaleW").value);
-            const speed = parseFloat(document.getElementById("speed").value);
-            const volume = parseFloat(document.getElementById("volume").value);
-
-            const socket = new WebSocket(url);
-            socket.binaryType = 'arraybuffer';
-            player = new PCMPlayer({
-                codec: 'Int16',
-                channels: 1,
-                sampleRate: sampleRate,
-            });
-            player.volume(volume);
-
-            socket.onmessage = function(event) {
-                if (delay == 0) {
-                    delay = performance.now() - startTime;
-                    delayInfo.textContent = "首包延迟: " + Math.ceil(delay) + " 毫秒";
-                }
-                player.feed(event.data);
-                wavesurfer.load(player.url);
-            };
-            socket.onopen = function(event) {
-                console.log('WebSocket 连接已建立');
-                socket.send(JSON.stringify({
-                    speaker: speaker,
-                    text: textInput,
-                    sample_rate: sampleRate,
-                    sdp_ratio: sdpRatio,
-                    noise_scale: noiseScale,
-                    noise_scale_w: noiseScaleW,
-                    length_scale: 1 / speed,
-                }));
-                startTime = performance.now();
-                delay = 0;
-            };
-        });
-
         // Play/pause on click
         wavesurfer.on('interaction', () => { wavesurfer.playPause() })
         const hover = document.querySelector('#hover')
